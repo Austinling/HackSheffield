@@ -1,8 +1,5 @@
 export function ChatHeader({
-  currentUser,
-  setCurrentUser,
   connectionStatus,
-  userList,
   currentPersona,
   onOpenPersonaPicker,
   personaImage,
@@ -13,20 +10,7 @@ export function ChatHeader({
       <div className="font-semibold text-[#d3eeec]">Odyssey Chat</div>
 
       <div className="flex items-center gap-4">
-        <div className="text-sm">
-          User:{" "}
-          <span className="font-semibold text-blue-300">{currentUser}</span>
-        </div>
-
-        <select
-          value={currentUser}
-          onChange={(e) => setCurrentUser(e.target.value)}
-          className="px-3 py-1 bg-gray-700 text-white rounded border border-gray-500 text-sm"
-        >
-          {userList.map((u) => (
-            <option key={u}>{u}</option>
-          ))}
-        </select>
+        {/* single-user app: no user selector */}
 
         <button
           onClick={onOpenPersonaPicker}
@@ -43,7 +27,7 @@ export function ChatHeader({
         </button>
 
         <div className="text-sm">
-          Status:{" "}
+          Status: {" "}
           <span
             className={
               connectionStatus === "connected"

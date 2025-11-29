@@ -1,35 +1,38 @@
 import { useState, useRef } from "react";
+import zeusImg from "../Images/zeus.jpeg";
+import athenaImg from "../Images/athena.jpeg";
+import hermesImg from "../Images/hermes.png";
 import { ChatHeader } from "./ChatHeader";
 import { MessageList } from "./MessageList.tsx";
 import { ChatInput } from "./ChatInput";
 import { useWebSocket } from "./WebSocket";
 
 export function Background() {
-  const [currentUser, setCurrentUser] = useState("User1");
-  const [currentPersona, setCurrentPersona] = useState("Description");
+  const currentUser = "You";
+  const [currentPersona, setCurrentPersona] = useState("AI Descriptions");
   const [showPersonaPicker, setShowPersonaPicker] = useState(false);
   const [message, setMessage] = useState("");
   const messagesContainerRef = useRef(null);
-  const userList = ["User1", "User2", "User3"];
+  // single-user app: currentUser is fixed
 
   const personas = [
     {
       id: "Zeus",
       name: "Zeus — General AI",
       desc: "General assistant with broad knowledge",
-      image: "Images/zeus.jpeg",
+      image: zeusImg,
     },
     {
       id: "Athena",
       name: "Athena — Researcher",
       desc: "Careful, detailed explanations",
-      image: "Images/athena.jpeg",
+      image: athenaImg,
     },
     {
       id: "Hermes",
       name: "Hermes — Quick replies",
       desc: "Short, fast answers",
-      image: "Images/hermes.png",
+      image: hermesImg,
     },
   ];
 
@@ -46,10 +49,7 @@ export function Background() {
     <div className="flex justify-center items-center h-screen bg-linear-to-r from-[#809DF2] to-[#FFFFFF]">
       <div className="rounded-3xl max-w-3xl w-full h-full flex flex-col bg-blue-500">
         <ChatHeader
-          currentUser={currentUser}
-          setCurrentUser={setCurrentUser}
           connectionStatus={connectionStatus}
-          userList={userList}
           currentPersona={currentPersona}
           onOpenPersonaPicker={() => setShowPersonaPicker(true)}
           personaImage={getPersonaImage(currentPersona)}
@@ -59,7 +59,7 @@ export function Background() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg p-8 max-w-2xl w-full">
               <h3 className="text-2xl font-semibold text-center mb-6">
-                Choose AI Persona
+                Description of AI Personas
               </h3>
               <div className="grid grid-cols-3 gap-4">
                 {personas.map((p) => (
@@ -104,6 +104,7 @@ export function Background() {
           message={message}
           setMessage={setMessage}
           onSend={sendMessage}
+          suggestions={personas}
         />
       </div>
     </div>
