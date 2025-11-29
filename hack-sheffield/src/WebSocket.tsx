@@ -1,32 +1,76 @@
 import { useState, useEffect, useRef } from "react";
 
-export function useWebSocket(currentUser: string, persona: string = "Zeus") {
+export function useWebSocket(currentUsername: string, persona: string = "Zeus", shouldConnect: boolean = true) {
   const [connectionStatus, setConnectionStatus] = useState("disconnected");
   const [messages, setMessages] = useState<any[]>([]);
+  const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   const wsRef = useRef<WebSocket | null>(null);
   const nextId = useRef(1);
 
   const connect = () => {
+    if (!shouldConnect || !currentUsername) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     const ws = new WebSocket(
       "wss://unperishable-autogenous-jaycob.ngrok-free.dev/ws"
     );
 
-    ws.onopen = () => setConnectionStatus("connected");
+    ws.onopen = () => {
+      setConnectionStatus("connected");
+      // Announce this user joining the chat
+      ws.send(JSON.stringify({ type: "join", username: currentUsername }));
+    };
+
     ws.onerror = () => setConnectionStatus("error");
     ws.onclose = () => setConnectionStatus("disconnected");
 
     ws.onmessage = (event) => {
-      const text = typeof event.data === "string" ? event.data : "";
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: nextId.current++,
-          sender: "server",
-          text,
-        },
-      ]);
+      try {
+        const data = JSON.parse(typeof event.data === "string" ? event.data : "{}");
+
+        // Handle typing indicator
+        if (data.type === "typing") {
+          setTypingUsers((prev) => {
+            const updated = new Set(prev);
+            if (data.isTyping) {
+              updated.add(data.username);
+            } else {
+              updated.delete(data.username);
+            }
+            return updated;
+          });
+          return;
+        }
+
+        // Handle broadcasted user message (from other users or server response)
+        if (data.type === "message" || (data.text && data.username)) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: nextId.current++,
+              sender: data.sender || "user",
+              text: data.text,
+              username: data.username,
+              targetPersona: data.targetPersona,
+              error: data.error,
+            },
+          ]);
+          // Clear typing indicator for this user
+          setTypingUsers((prev) => {
+            const updated = new Set(prev);
+            updated.delete(data.username);
+            return updated;
+          });
+          return;
+        }
+
+        // Ignore plain text fallback messages (welcome, system messages, etc.)
+        // Only process structured JSON messages with username or type field
+        return;
+      } catch (err) {
+        // Ignore plain text messages that can't be parsed as JSON
+        return;
+      }
     };
 
     wsRef.current = ws;
@@ -40,7 +84,14 @@ export function useWebSocket(currentUser: string, persona: string = "Zeus") {
     const aiToAiMatch = text.match(
       /^@([A-Za-z0-9_-]+)\s*->\s*@([A-Za-z0-9_-]+)\s*:\s*(.+)$/
     );
-    const mentionMatch = text.match(/^@([A-Za-z0-9_-]+)\s+(.+)$/);
+    
+    // Match @PersonaName anywhere in the message (at start, end, or middle)
+    const mentionMatch = text.match(/@([A-Za-z0-9_-]+)/);
+    
+    // Extract the content (everything except the @persona mention)
+    const getContentWithoutMention = (fullText: string, personaName: string) => {
+      return fullText.replace(`@${personaName}`, "").trim();
+    };
 
     if (aiToAiMatch) {
       const fromPersona = aiToAiMatch[1];
@@ -54,7 +105,7 @@ export function useWebSocket(currentUser: string, persona: string = "Zeus") {
           id: nextId.current++,
           text: `(Requested ${fromPersona} → ${toPersona}) ${inner}`,
           sender: "me",
-          username: currentUser,
+          username: currentUsername,
         },
         { id: nextId.current++, text: "...", sender: "server", loading: true },
       ]);
@@ -64,7 +115,7 @@ export function useWebSocket(currentUser: string, persona: string = "Zeus") {
         fromPersona,
         toPersona,
         text: inner,
-        username: currentUser,
+        username: currentUsername,
       };
       try {
         wsRef.current?.send(JSON.stringify(payload));
@@ -76,54 +127,67 @@ export function useWebSocket(currentUser: string, persona: string = "Zeus") {
 
     if (mentionMatch) {
       const targetPersona = mentionMatch[1];
-      const content = mentionMatch[2];
+      const content = getContentWithoutMention(text, targetPersona);
 
       // local echo with target info
       setMessages((prev) => [
         ...prev,
         {
           id: nextId.current++,
-          text: content,
+          text: content || `(calling ${targetPersona})`,
           sender: "me",
-          username: currentUser,
+          username: currentUsername,
           targetPersona,
         },
         { id: nextId.current++, text: "...", sender: "server", loading: true },
       ]);
 
       const payload = {
-        text: content,
-        username: currentUser,
+        text: content || "",
+        username: currentUsername,
         persona,
         targetPersona,
       };
+      
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        console.error("WebSocket not connected. State:", wsRef.current?.readyState);
+        return;
+      }
+      
       try {
-        wsRef.current?.send(JSON.stringify(payload));
+        wsRef.current.send(JSON.stringify(payload));
       } catch (err) {
         console.error("Failed to send websocket message:", err);
       }
       return;
     }
 
-    // default: send from current persona
+    // default: show locally only (no broadcast, no AI call)
+    // Only messages with @persona are sent to the server
     setMessages((prev) => [
       ...prev,
-      { id: nextId.current++, text, sender: "me", username: currentUser },
-      { id: nextId.current++, text: "...", sender: "server", loading: true },
+      { id: nextId.current++, text, sender: "me", username: currentUsername },
     ]);
-
-    const payload = { text, username: currentUser, persona };
-    try {
-      wsRef.current?.send(JSON.stringify(payload));
-    } catch (err) {
-      console.error("Failed to send websocket message:", err);
-    }
   };
 
   useEffect(() => {
-    connect();
+    if (shouldConnect && currentUsername) {
+      connect();
+    }
     return () => wsRef.current?.close();
-  }, []);
+  }, [currentUsername, shouldConnect]);
 
-  return { connectionStatus, messages, sendMessage };
+  const sendTypingIndicator = (isTyping: boolean) => {
+    try {
+      wsRef.current?.send(JSON.stringify({
+        type: "typing",
+        username: currentUsername,
+        isTyping,
+      }));
+    } catch (err) {
+      console.error("Failed to send typing indicator:", err);
+    }
+  };
+
+  return { connectionStatus, messages, typingUsers, sendMessage, sendTypingIndicator };
 }

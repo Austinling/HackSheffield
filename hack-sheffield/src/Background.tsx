@@ -8,12 +8,12 @@ import { ChatInput } from "./ChatInput";
 import { useWebSocket } from "./WebSocket";
 
 export function Background() {
-  const currentUser = "You";
+  const [currentUsername, setCurrentUsername] = useState("");
+  const [usernameSubmitted, setUsernameSubmitted] = useState(false);
   const [currentPersona, setCurrentPersona] = useState("AI Descriptions");
   const [showPersonaPicker, setShowPersonaPicker] = useState(false);
   const [message, setMessage] = useState("");
   const messagesContainerRef = useRef(null);
-  // single-user app: currentUser is fixed
 
   const personas = [
     {
@@ -40,10 +40,46 @@ export function Background() {
     return personas.find((p) => p.id === id)?.image || "";
   };
 
-  const { connectionStatus, messages, sendMessage } = useWebSocket(
-    currentUser,
-    currentPersona
+  // Only initialize WebSocket after username is submitted
+  const shouldConnect = Boolean(usernameSubmitted && currentUsername.trim());
+  const { connectionStatus, messages, typingUsers, sendMessage, sendTypingIndicator } = useWebSocket(
+    shouldConnect ? currentUsername : "",
+    currentPersona,
+    shouldConnect
   );
+
+  // Show username prompt if not yet submitted
+  if (!usernameSubmitted || !currentUsername.trim()) {
+    return (
+      <div className="flex justify-center items-center h-screen bg-linear-to-r from-[#809DF2] to-[#FFFFFF]">
+        <div className="bg-white rounded-lg p-8 max-w-md w-full shadow-lg">
+          <h2 className="text-2xl font-bold mb-6 text-center">Join Chat</h2>
+          <input
+            type="text"
+            placeholder="Enter your username"
+            value={currentUsername}
+            onChange={(e) => setCurrentUsername(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && currentUsername.trim()) {
+                setUsernameSubmitted(true);
+              }
+            }}
+            className="w-full px-4 py-3 border-2 border-blue-500 rounded-lg mb-4 text-lg focus:outline-none focus:border-blue-700"
+          />
+          <button
+            onClick={() => {
+              if (currentUsername.trim()) {
+                setUsernameSubmitted(true);
+              }
+            }}
+            className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold"
+          >
+            Join
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex justify-center items-center h-screen bg-linear-to-r from-[#809DF2] to-[#FFFFFF]">
@@ -98,12 +134,14 @@ export function Background() {
         <MessageList
           messages={messages}
           messagesContainerRef={messagesContainerRef}
+          typingUsers={typingUsers}
         />
 
         <ChatInput
           message={message}
           setMessage={setMessage}
           onSend={sendMessage}
+          onTyping={sendTypingIndicator}
           suggestions={personas}
         />
       </div>

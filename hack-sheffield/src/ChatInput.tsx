@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from "react";
 
-export function ChatInput({ message, setMessage, onSend, suggestions = [] }: any) {
+export function ChatInput({ message, setMessage, onSend, onTyping, suggestions = [] }: any) {
   const [open, setOpen] = useState(false);
   const [filtered, setFiltered] = useState<any[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const containerRef = useRef<HTMLFormElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // watch for @mention pattern — show suggestions even when only '@' is typed
   useEffect(() => {
@@ -79,7 +80,21 @@ export function ChatInput({ message, setMessage, onSend, suggestions = [] }: any
         className="flex-1 px-6 py-4 text-lg rounded-full border-2 border-blue-500"
         placeholder="Ask me anything... (use @name)"
         value={message}
-        onChange={(e) => setMessage(e.target.value)}
+        onChange={(e) => {
+          setMessage(e.target.value);
+          // Only send typing indicator if message contains @ (indicating intent to call AI)
+          const hasAtMention = e.target.value.includes("@");
+          if (onTyping && hasAtMention) {
+            // Clear existing timeout
+            if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+            // Send typing=true
+            onTyping(true);
+            // After 2 seconds of inactivity, send typing=false
+            typingTimeoutRef.current = setTimeout(() => {
+              onTyping(false);
+            }, 2000);
+          }
+        }}
         ref={inputRef}
         onKeyDown={handleKeyDown}
         aria-autocomplete="list"
