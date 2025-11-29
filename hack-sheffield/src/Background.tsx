@@ -6,14 +6,15 @@ import { ChatHeader } from "./ChatHeader";
 import { MessageList } from "./MessageList.tsx";
 import { ChatInput } from "./ChatInput";
 import { useWebSocket } from "./WebSocket";
+import LoginPrompt from "./LoginPrompt";
 
 export function Background() {
-  const currentUser = "You";
+  const [currentUsername, setCurrentUsername] = useState("");
+  const [usernameSubmitted, setUsernameSubmitted] = useState(false);
   const [currentPersona, setCurrentPersona] = useState("AI Descriptions");
   const [showPersonaPicker, setShowPersonaPicker] = useState(false);
   const [message, setMessage] = useState("");
   const messagesContainerRef = useRef(null);
-  // single-user app: currentUser is fixed
 
   const personas = [
     {
@@ -40,10 +41,23 @@ export function Background() {
     return personas.find((p) => p.id === id)?.image || "";
   };
 
-  const { connectionStatus, messages, sendMessage } = useWebSocket(
-    currentUser,
+  // Only initialize WebSocket after username is submitted
+  const shouldConnect = Boolean(usernameSubmitted && currentUsername.trim());
+  const { connectionStatus, messages, typingUsers, sendMessage, sendTypingIndicator } = useWebSocket(
+    shouldConnect ? currentUsername : "",
     currentPersona
   );
+
+  // Show reusable LoginPrompt until the user provides a username
+  if (!usernameSubmitted || !currentUsername.trim()) {
+    return (
+      <LoginPrompt
+        username={currentUsername}
+        onChange={(v) => setCurrentUsername(v)}
+        onSubmit={() => setUsernameSubmitted(true)}
+      />
+    );
+  }
 
   return (
     <div className="flex justify-center items-center h-screen bg-linear-to-r from-[#809DF2] to-[#FFFFFF]">
@@ -98,12 +112,14 @@ export function Background() {
         <MessageList
           messages={messages}
           messagesContainerRef={messagesContainerRef}
+          typingUsers={typingUsers}
         />
 
         <ChatInput
           message={message}
           setMessage={setMessage}
           onSend={sendMessage}
+          onTyping={sendTypingIndicator}
           suggestions={personas}
         />
       </div>
