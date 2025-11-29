@@ -33,6 +33,7 @@ export function ChatInput({ message, setMessage, onSend, suggestions = [] }: any
     // replace the trailing @token (including when token is empty) with the full mention + space
     const newText = message.replace(/@([A-Za-z0-9_-]*)$/, `@${name} `);
     setMessage(newText);
+    
     setOpen(false);
     // Keep focus in the input and move caret to the end of the inserted text
     setTimeout(() => {

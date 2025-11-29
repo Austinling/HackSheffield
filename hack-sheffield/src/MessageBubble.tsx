@@ -1,4 +1,8 @@
-export function MessageBubble({ message }) {
+import MarkdownIt from "markdown-it";
+
+const md = new MarkdownIt({ html: false, linkify: true, typographer: true });
+
+export function MessageBubble({ message }: { message: { sender: string; loading?: boolean; text?: string; username?: string; targetPersona?: string } }) {
   const isMe = message.sender === "me";
 
   return (
@@ -21,15 +25,15 @@ export function MessageBubble({ message }) {
       )}
 
       <div
-        className={`px-4 py-2 max-w-[70%] rounded-lg ${
-          isMe
-            ? "bg-blue-600 text-white"
-            : message.sender === "server"
-            ? "bg-emerald-500 text-white"
-            : "bg-gray-200 text-gray-900"
-        } ${message.loading ? "animate-pulse opacity-80" : ""}`}
+        className={`max-w-[70%] overflow-x-auto ${message.loading ? "animate-pulse opacity-80" : ""} ${isMe ? "px-4 py-2 rounded-lg bg-blue-600 text-white" : message.sender === "server" ? "px-4 py-3 rounded-lg bg-emerald-50 text-inherit text-left" : "px-4 py-2 rounded-lg bg-gray-200 text-gray-900"}`}
       >
-        {message.loading ? "..." : message.text}
+        {message.loading ? (
+          "..."
+        ) : message.sender === "server" ? (
+          <div className="text-left whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: md.render(String(message.text || "")) }} />
+        ) : (
+          message.text
+        )}
       </div>
     </div>
   );
