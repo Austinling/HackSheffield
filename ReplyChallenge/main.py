@@ -21,6 +21,8 @@ load_dotenv(env_path)
 app = FastAPI()
 
 # --- 1. NEW: Connection Manager for Multiplayer ---
+
+
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
@@ -40,6 +42,7 @@ class ConnectionManager:
                 await connection.send_text(message)
             except Exception as e:
                 print(f"Error broadcasting to a client: {e}")
+
 
 # Initialize the manager
 manager = ConnectionManager()
@@ -74,6 +77,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/")
 async def root():
     """Health check endpoint"""
@@ -86,6 +90,7 @@ async def root():
         }
     })
 
+
 @app.get("/health")
 async def health():
     """Health check endpoint"""
@@ -95,6 +100,7 @@ async def health():
         "openai": "initialized" if client else "not initialized",
         "active_users": len(manager.active_connections)
     })
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -108,6 +114,7 @@ async def startup_event():
         print(f"⚠ Warning: Database verification failed on startup: {e}")
     print("="*50 + "\n")
 
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     # Connect user to the room and initialize per-connection state
@@ -120,7 +127,8 @@ async def websocket_endpoint(websocket: WebSocket):
     if not hasattr(app.state, "connected_clients"):
         app.state.connected_clients = {}
 
-    print(f"\n🔗 New Multiplayer Connection. Total Users: {len(manager.active_connections)}")
+    print(
+        f"\n🔗 New Multiplayer Connection. Total Users: {len(manager.active_connections)}")
 
     try:
         while True:
@@ -153,13 +161,22 @@ async def websocket_endpoint(websocket: WebSocket):
                     username,
                     "join",
                 )
-                # Do not broadcast join messages to clients (user requested)
+                # Broadcast user.joined presence event to all clients
+                join_payload = json.dumps(
+                    {"type": "user.joined", "username": username})
+                for ws in list(app.state.connected_clients.keys()):
+                    try:
+                        await ws.send_text(join_payload)
+                    except Exception:
+                        pass
                 continue
 
             # Handle typing presence: rebroadcast to other clients
             if parsed and isinstance(parsed, dict) and parsed.get("type") == "typing":
-                username = parsed.get("username") or app.state.connected_clients.get(websocket, "anonymous")
-                payload = json.dumps({"type": "typing", "username": username, "isTyping": bool(parsed.get("isTyping"))})
+                username = parsed.get("username") or app.state.connected_clients.get(
+                    websocket, "anonymous")
+                payload = json.dumps(
+                    {"type": "typing", "username": username, "isTyping": bool(parsed.get("isTyping"))})
                 # broadcast typing presence to other clients
                 for ws in list(app.state.connected_clients.keys()):
                     if ws is not websocket:
@@ -179,7 +196,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 text = data
 
             # Broadcast the user message to everyone (so chat is shared)
-            broadcast_payload = json.dumps({"type": "message", "username": username, "text": text})
+            broadcast_payload = json.dumps(
+                {"type": "message", "username": username, "text": text})
             await manager.broadcast(broadcast_payload)
 
             # If OpenAI client missing, send private system notice to sender
@@ -254,10 +272,21 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         # cleanup on disconnect
         manager.disconnect(websocket)
-        username = app.state.connected_clients.pop(websocket, None) if hasattr(app.state, 'connected_clients') else None
-        print(f"🔌 Client disconnected. Remaining: {len(manager.active_connections)} user={username}")
-        # persist a leave event (do not broadcast)
+        username = app.state.connected_clients.pop(websocket, None) if hasattr(
+            app.state, 'connected_clients') else None
+        print(
+            f"🔌 Client disconnected. Remaining: {len(manager.active_connections)} user={username}")
+        # Broadcast user.left presence event and persist to DB
         if username:
+            # Broadcast to remaining clients
+            leave_payload = json.dumps(
+                {"type": "user.left", "username": username})
+            for ws in list(app.state.connected_clients.keys()):
+                try:
+                    await ws.send_text(leave_payload)
+                except Exception:
+                    pass
+            # Persist leave event to DB
             loop = __import__("asyncio").get_event_loop()
             await loop.run_in_executor(
                 executor,
