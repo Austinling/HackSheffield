@@ -83,20 +83,34 @@ export function ChatInput({ message, setMessage, onSend, onTyping, suggestions =
         value={message}
         onChange={(e) => {
           setMessage(e.target.value);
-          // Only send typing indicator if message contains @ (indicating intent to call AI)
-          const hasAtMention = e.target.value.includes("@");
-          if (onTyping && hasAtMention) {
-            // Clear existing timeout
-            if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-            // Send typing=true
-            onTyping(true);
-            // After 2 seconds of inactivity, send typing=false
-            typingTimeoutRef.current = setTimeout(() => {
-              onTyping(false);
-            }, 2000);
+          if (!onTyping) return;
+
+          // Clear previous timeout
+          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+          // If there's any content, signal typing=true; empty content -> typing=false
+          const hasContent = String(e.target.value).trim().length > 0;
+          try {
+            onTyping(Boolean(hasContent));
+          } catch (err) {
+            console.error("onTyping handler error:", err);
           }
+
+          // After 2 seconds of inactivity, send typing=false if there is no more activity
+          typingTimeoutRef.current = setTimeout(() => {
+            try {
+              onTyping(false);
+            } catch (err) {
+              console.error("onTyping handler error:", err);
+            }
+          }, 2000);
         }}
         ref={inputRef}
+        onBlur={() => {
+          // ensure we clear typing state on blur
+          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+          if (onTyping) try { onTyping(false); } catch {};
+        }}
         onKeyDown={handleKeyDown}
         aria-autocomplete="list"
       />
