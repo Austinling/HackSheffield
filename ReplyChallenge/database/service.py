@@ -2,7 +2,13 @@ import json
 from datetime import datetime
 from .client import supabase
 
-def log_chat_to_db(user_prompt: str, ai_response: str, tokens: int, session_id: str, metadata: dict):
+def log_chat_to_db(user_prompt: str | None,
+                   ai_response: str | None,
+                   tokens: int | None,
+                   session_id: str,
+                   metadata: dict,
+                   username: str | None = None,
+                   event_type: str = "message"):
     """
     Saves the chat interaction to Supabase.
     
@@ -19,7 +25,11 @@ def log_chat_to_db(user_prompt: str, ai_response: str, tokens: int, session_id: 
     """
     if supabase is None:
         print(f"⚠️  Database not connected. Set SUPABASE_URL and SUPABASE_KEY in .env file")
-        print(f"   Message would have been saved: {user_prompt[:50]}...")
+        try:
+            preview = (user_prompt or ai_response or "")[:50]
+        except Exception:
+            preview = "<unavailable>"
+        print(f"   Message would have been saved: {preview}...")
         return None
     
     try:
@@ -28,9 +38,10 @@ def log_chat_to_db(user_prompt: str, ai_response: str, tokens: int, session_id: 
             "response": ai_response,
             "tokens_used": tokens,
             "session_id": session_id,
-            "metadata": metadata,
-            "username": "WebUser",  # Update this later with actual user login
-            "user_id": None,        # Keep None unless using Supabase Auth
+            "metadata": metadata or {},
+            "username": username or "anonymous",
+            "event_type": event_type,
+            "user_id": None,
             "created_at": datetime.utcnow().isoformat()
         }
 

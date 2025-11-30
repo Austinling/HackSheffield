@@ -47,7 +47,7 @@ export function MessageBubble({
       >
         {message.loading ? (
           "..."
-        ) : message.sender === "server" ? (
+        ) : (message.sender === "server" || message.sender === "ai") ? (
           <div
             className="text-left whitespace-pre-wrap"
             dangerouslySetInnerHTML={{

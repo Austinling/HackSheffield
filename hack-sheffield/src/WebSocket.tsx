@@ -13,10 +13,10 @@ export function useWebSocket(
   const connect = () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-    const ws = new WebSocket(
-      "wss://unperishable-autogenous-jaycob.ngrok-free.dev/ws"
-      // "wss://helene-drivable-appetizingly.ngrok-free.dev/ws"
-    );
+    const rawUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8000/ws";
+    // Ensure we use a ws/wss scheme (allow users to set http(s) too)
+    const normalized = rawUrl.replace(/^http:/i, "ws:").replace(/^https:/i, "wss:");
+    const ws = new WebSocket(normalized);
 
     ws.onopen = () => {
       setConnectionStatus("connected");
@@ -33,58 +33,52 @@ export function useWebSocket(
 
     ws.onmessage = (event) => {
       // Parse incoming data (may be JSON with metadata or plain text)
-      let text = typeof event.data === "string" ? event.data : "";
+      let raw = typeof event.data === "string" ? event.data : "";
       let parsedMsg: any = null;
       try {
-        parsedMsg = JSON.parse(text);
-        if (parsedMsg && typeof parsedMsg === "object") {
-          // handle structured control messages first
-          if (parsedMsg.type === "typing") {
-            const username = parsedMsg.username;
-            const isTyping = !!parsedMsg.isTyping;
-            setTypingUsers((prev) => {
-              const copy = new Set(prev);
-              if (isTyping) copy.add(username);
-              else copy.delete(username);
-              return copy;
-            });
-            return; // don't add to messages
-          }
-
-          if (parsedMsg.type === "user.joined" || parsedMsg.type === "user.left") {
-            // show a small system message for joins/leaves
-            const notice = parsedMsg.type === "user.joined" ? `${parsedMsg.username} joined` : `${parsedMsg.username} left`;
-            setMessages((prev) => [
-              ...prev,
-              { id: nextId.current++, text: notice, sender: "server" },
-            ]);
-            // ensure typing state is cleared when someone leaves
-            if (parsedMsg.type === "user.left" && parsedMsg.username) {
-              setTypingUsers((prev) => {
-                const copy = new Set(prev);
-                copy.delete(parsedMsg.username);
-                return copy;
-              });
-            }
-            return;
-          }
-
-          // Prefer common field names for server text
-          if (parsedMsg.text) text = String(parsedMsg.text);
-          else if (parsedMsg.message) text = String(parsedMsg.message);
-          else if (typeof parsedMsg === "string") text = parsedMsg;
-        }
+        parsedMsg = JSON.parse(raw);
       } catch (e) {
-        // JSON.parse failed — server might send a partial/invalid object string
-        // Try a defensive regex to pull out the text field: "text": "..."
-        try {
-          const m = /"text"\s*:\s*"([^"]*)"/.exec(text);
-          if (m && m[1]) {
-            text = m[1];
-          }
-        } catch (err) {
-          // ignore any regex failures and keep raw text
+        parsedMsg = null;
+      }
+
+      // Handle typing presence quickly
+      if (parsedMsg && parsedMsg.type === "typing") {
+        const username = parsedMsg.username;
+        const isTyping = !!parsedMsg.isTyping;
+        setTypingUsers((prev) => {
+          const copy = new Set(prev);
+          if (isTyping) copy.add(username);
+          else copy.delete(username);
+          return copy;
+        });
+        return;
+      }
+
+      // Determine message payload fields
+      let messageText = "";
+      let messageSender: string | null = null;
+      let messageType = "server";
+
+      if (parsedMsg && typeof parsedMsg === "object") {
+        messageType = parsedMsg.type || "server";
+        if (messageType === "message") {
+          messageText = String(parsedMsg.text || parsedMsg.message || "");
+          messageSender = parsedMsg.username || "unknown";
+        } else if (messageType === "ai") {
+          messageText = String(parsedMsg.text || "");
+          messageSender = "ai";
+        } else if (messageType === "system") {
+          messageText = String(parsedMsg.text || "");
+          messageSender = "server";
+        } else {
+          // fallback for other structured messages
+          messageText = String(parsedMsg.text || parsedMsg.message || raw);
+          messageSender = parsedMsg.username || "server";
         }
+      } else {
+        // non-json fallback
+        messageText = raw;
+        messageSender = "server";
       }
 
       // Prefer to replace the most recent loading indicator instead of appending
@@ -100,17 +94,17 @@ export function useWebSocket(
 
         if (idx >= 0) {
           const copy = prev.slice();
-          copy[idx] = { ...copy[idx], text, loading: false };
+          copy[idx] = { ...copy[idx], text: messageText, loading: false };
           return copy;
         }
 
-        // no loading placeholder found — append as a new server message
+        // no loading placeholder found — append as a new message
         return [
           ...prev,
           {
             id: nextId.current++,
-            sender: "server",
-            text,
+            sender: messageSender,
+            text: messageText,
           },
         ];
       });

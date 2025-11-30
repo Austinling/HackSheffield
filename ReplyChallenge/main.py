@@ -1,5 +1,6 @@
 import os
 import uuid
+import json
 from typing import List
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -109,71 +110,166 @@ async def startup_event():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    # 1. Connect user to the "Room" instead of just accepting
+    # Connect user to the room and initialize per-connection state
     await manager.connect(websocket)
-    
-    # 2. Hardcode Session ID for Shared History (Hackathon Logic)
-    # Using a single ID means all users contribute to the same chat history
+
+    # Hardcoded shared session id for hackathon room
     session_id = "hackathon_public_room"
-    
+
+    # Ensure a map of websocket -> username exists on app.state
+    if not hasattr(app.state, "connected_clients"):
+        app.state.connected_clients = {}
+
     print(f"\n🔗 New Multiplayer Connection. Total Users: {len(manager.active_connections)}")
 
     try:
         while True:
-            # 3. Receive User Input
             data = await websocket.receive_text()
-            print(f"📥 User Input: {data[:100]}...")
-            
-            # 4. BROADCAST USER MESSAGE (So everyone sees what was typed)
-            # You might want to prefix this with "User:" or handle UI bubbles on frontend
-            await manager.broadcast(f"User: {data}")
+            print(f"📥 Received raw input: {data[:120]}...")
 
-            if not client:
-                error_msg = "OpenAI client not initialized"
-                print(f"✗ {error_msg}")
-                await manager.broadcast(f"System: {error_msg}")
-                continue
-            
+            # Try to parse structured JSON messages from the frontend
+            parsed = None
             try:
-                # 5. Call OpenAI API
-                print(f"🤖 Calling OpenAI API...")
-                completion = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[{"role": "user", "content": data}]
-                )
-                
-                ai_text = completion.choices[0].message.content
-                tokens = completion.usage.total_tokens
-                full_metadata = completion.model_dump()
-                
-                print(f"✓ OpenAI Response received ({tokens} tokens)")
+                parsed = json.loads(data)
+            except Exception:
+                parsed = None
 
-                # 6. Save to Supabase (Background Thread)
-                # We save it once. Since session_id is shared, it's saved for the whole room.
-                print(f"💾 Saving to database...")
-                loop = __import__('asyncio').get_event_loop()
+            # Handle join events: store in DB but DO NOT broadcast to chat
+            if parsed and isinstance(parsed, dict) and parsed.get("type") == "join":
+                username = parsed.get("username") or "anonymous"
+                app.state.connected_clients[websocket] = username
+                print(f"→ Registered user: {username} for websocket")
+
+                # Persist join event to DB (background thread)
+                loop = __import__("asyncio").get_event_loop()
                 await loop.run_in_executor(
                     executor,
                     log_chat_to_db,
-                    data,
+                    None,
+                    None,
+                    None,
+                    session_id,
+                    {"event": "join"},
+                    username,
+                    "join",
+                )
+                # Do not broadcast join messages to clients (user requested)
+                continue
+
+            # Handle typing presence: rebroadcast to other clients
+            if parsed and isinstance(parsed, dict) and parsed.get("type") == "typing":
+                username = parsed.get("username") or app.state.connected_clients.get(websocket, "anonymous")
+                payload = json.dumps({"type": "typing", "username": username, "isTyping": bool(parsed.get("isTyping"))})
+                # broadcast typing presence to other clients
+                for ws in list(app.state.connected_clients.keys()):
+                    if ws is not websocket:
+                        try:
+                            await ws.send_text(payload)
+                        except Exception:
+                            pass
+                continue
+
+            # For normal messages, expect structured payload with `text` and `username`
+            username = app.state.connected_clients.get(websocket, "anonymous")
+            text = None
+            if parsed and isinstance(parsed, dict) and parsed.get("text"):
+                text = parsed.get("text")
+            else:
+                # fallback: treat raw string as message text
+                text = data
+
+            # Broadcast the user message to everyone (so chat is shared)
+            broadcast_payload = json.dumps({"type": "message", "username": username, "text": text})
+            await manager.broadcast(broadcast_payload)
+
+            # If OpenAI client missing, send private system notice to sender
+            if not client:
+                err = "OpenAI client not initialized"
+                print(f"✗ {err}")
+                try:
+                    await websocket.send_text(json.dumps({"type": "system", "text": err}))
+                except Exception:
+                    pass
+                # still persist the user message without AI
+                loop = __import__("asyncio").get_event_loop()
+                await loop.run_in_executor(
+                    executor,
+                    log_chat_to_db,
+                    text,
+                    None,
+                    None,
+                    session_id,
+                    {},
+                    username,
+                    "message",
+                )
+                continue
+
+            # Call OpenAI privately for this sender only
+            try:
+                print(f"🤖 Calling OpenAI for user={username}...")
+                completion = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant."},
+                        {"role": "user", "content": text},
+                    ],
+                    max_tokens=500,
+                )
+
+                ai_text = completion.choices[0].message.content
+                tokens = getattr(completion.usage, "total_tokens", None)
+                full_metadata = getattr(completion, "model_dump", lambda: {})()
+
+                print(f"✓ OpenAI response for {username} ({tokens} tokens)")
+
+                # Persist both prompt and response together
+                loop = __import__("asyncio").get_event_loop()
+                await loop.run_in_executor(
+                    executor,
+                    log_chat_to_db,
+                    text,
                     ai_text,
                     tokens,
                     session_id,
-                    full_metadata
+                    full_metadata,
+                    username,
+                    "message",
                 )
 
-                # 7. BROADCAST AI RESPONSE (So everyone sees the answer)
-                print(f"📤 Broadcasting response ({len(ai_text)} chars)")
-                await manager.broadcast(f"AI: {ai_text}")
+                # Send AI response privately to the requester only
+                try:
+                    await websocket.send_text(json.dumps({"type": "ai", "text": ai_text}))
+                except Exception:
+                    await websocket.send_text(ai_text)
 
             except Exception as e:
                 error_msg = f"Error processing request: {str(e)}"
                 print(f"✗ {error_msg}")
-                await manager.broadcast(f"System Error: {error_msg}")
+                try:
+                    await websocket.send_text(json.dumps({"type": "system", "text": error_msg}))
+                except Exception:
+                    pass
 
     except WebSocketDisconnect:
+        # cleanup on disconnect
         manager.disconnect(websocket)
-        print(f"🔌 Client disconnected. Remaining: {len(manager.active_connections)}")
+        username = app.state.connected_clients.pop(websocket, None) if hasattr(app.state, 'connected_clients') else None
+        print(f"🔌 Client disconnected. Remaining: {len(manager.active_connections)} user={username}")
+        # persist a leave event (do not broadcast)
+        if username:
+            loop = __import__("asyncio").get_event_loop()
+            await loop.run_in_executor(
+                executor,
+                log_chat_to_db,
+                None,
+                None,
+                None,
+                session_id,
+                {"event": "leave"},
+                username,
+                "leave",
+            )
     except Exception as e:
         print(f"✗ WebSocket Error: {e}")
         manager.disconnect(websocket)
