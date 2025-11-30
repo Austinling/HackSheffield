@@ -1,6 +1,10 @@
 import { MessageBubble } from "./MessageBubble";
 
-export function MessageList({ messages, messagesContainerRef, typingUsers = new Set() }: any) {
+export function MessageList({
+  messages,
+  messagesContainerRef,
+  typingUsers = new Set(),
+}: any) {
   return (
     <div
       ref={messagesContainerRef}

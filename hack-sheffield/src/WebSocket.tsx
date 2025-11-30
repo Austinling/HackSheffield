@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 
-export function useWebSocket(currentUser: string, persona: string | null = null) {
+export function useWebSocket(
+  currentUser: string,
+  persona: string | null = null
+) {
   const [connectionStatus, setConnectionStatus] = useState("disconnected");
   const [messages, setMessages] = useState<any[]>([]);
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
@@ -112,12 +115,15 @@ export function useWebSocket(currentUser: string, persona: string | null = null)
         persona,
         targetPersona,
       };
-      
+
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-        console.error("WebSocket not connected. State:", wsRef.current?.readyState);
+        console.error(
+          "WebSocket not connected. State:",
+          wsRef.current?.readyState
+        );
         return;
       }
-      
+
       try {
         wsRef.current.send(JSON.stringify(payload));
       } catch (err) {
@@ -134,7 +140,7 @@ export function useWebSocket(currentUser: string, persona: string | null = null)
     ]);
 
     const payload = { text, username: currentUser, persona };
-    
+
     try {
       wsRef.current?.send(JSON.stringify(payload));
     } catch (err) {
@@ -161,5 +167,11 @@ export function useWebSocket(currentUser: string, persona: string | null = null)
     });
   };
 
-  return { connectionStatus, messages, typingUsers, sendMessage, sendTypingIndicator };
+  return {
+    connectionStatus,
+    messages,
+    typingUsers,
+    sendMessage,
+    sendTypingIndicator,
+  };
 }

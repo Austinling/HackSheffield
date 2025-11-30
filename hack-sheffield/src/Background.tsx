@@ -11,7 +11,7 @@ import LoginPrompt from "./LoginPrompt";
 export function Background() {
   const [currentUsername, setCurrentUsername] = useState("");
   const [usernameSubmitted, setUsernameSubmitted] = useState(false);
-  const [currentPersona, setCurrentPersona] = useState("AI Descriptions");
+  const [currentPersona] = useState("AI Descriptions");
   const [showPersonaPicker, setShowPersonaPicker] = useState(false);
   const [message, setMessage] = useState("");
   const messagesContainerRef = useRef(null);
@@ -43,10 +43,13 @@ export function Background() {
 
   // Only initialize WebSocket after username is submitted
   const shouldConnect = Boolean(usernameSubmitted && currentUsername.trim());
-  const { connectionStatus, messages, typingUsers, sendMessage, sendTypingIndicator } = useWebSocket(
-    shouldConnect ? currentUsername : "",
-    currentPersona
-  );
+  const {
+    connectionStatus,
+    messages,
+    typingUsers,
+    sendMessage,
+    sendTypingIndicator,
+  } = useWebSocket(shouldConnect ? currentUsername : "", currentPersona);
 
   // Show reusable LoginPrompt until the user provides a username
   if (!usernameSubmitted || !currentUsername.trim()) {
@@ -80,7 +83,7 @@ export function Background() {
                   <button
                     key={p.id}
                     onClick={() => {
-                      setCurrentPersona(p.id);
+                      // Close the picker without changing persona
                       setShowPersonaPicker(false);
                     }}
                     className="flex flex-col items-center p-4 rounded-lg border-2 border-gray-300 hover:border-blue-500 hover:bg-blue-50 transition"

@@ -6,7 +6,11 @@ export interface LoginPromptProps {
   onSubmit: () => void;
 }
 
-export function LoginPrompt({ username, onChange, onSubmit }: LoginPromptProps) {
+export function LoginPrompt({
+  username,
+  onChange,
+  onSubmit,
+}: LoginPromptProps) {
   return (
     <div className="flex justify-center items-center h-screen bg-linear-to-r from-[#809DF2] to-[#FFFFFF]">
       <div className="bg-white rounded-lg p-8 max-w-md w-full shadow-lg">
