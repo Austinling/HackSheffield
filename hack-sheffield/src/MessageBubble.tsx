@@ -15,6 +15,15 @@ export function MessageBubble({
 }) {
   const isMe = message.sender === "me";
 
+  // Render small centred system notices (join/leave) differently
+  if (message.sender === "system") {
+    return (
+      <div className="w-full flex justify-center">
+        <span className="text-xs text-gray-400 italic px-2">{message.text}</span>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`flex flex-col ${isMe ? "items-end" : "items-start"} gap-1`}
@@ -26,7 +35,7 @@ export function MessageBubble({
           }`}
         >
           {message.username}{" "}
-          {message.targetPersona ? (
+          {message.targetPersona && message.sender !== "user" ? (
             <span className="text-xs text-gray-500">
               → {message.targetPersona}
             </span>

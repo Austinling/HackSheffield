@@ -40,7 +40,7 @@ app.add_middleware(
 async def startup_event():
     """Verify database connection on startup"""
     print("\n" + "="*50)
-    print("APPLICATION STARTUP")
+    print("APPLICATION STARTUP (MULTIPLAYER MODE)")
     print("="*50)
     try:
         verify_database_connection()
@@ -195,7 +195,4 @@ async def websocket_endpoint(websocket: WebSocket):
                     pass
     except Exception as e:
         print(f"✗ WebSocket Error: {e}")
-        try:
-            await websocket.close()
-        except:
-            pass
+        manager.disconnect(websocket)

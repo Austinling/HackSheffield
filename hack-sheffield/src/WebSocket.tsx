@@ -51,12 +51,32 @@ export function useWebSocket(
             return; // don't add to messages
           }
 
+          if (parsedMsg.type === "user.message") {
+            // another user posted a non-AI message — add it to the message list
+              setMessages((prev) => {
+                // For plain user-to-user messages we avoid showing a persona label
+                // (Rogue sentinel should not be surfaced in the UI). Only include
+                // a persona label if the sender specified a real persona other than 'Rogue'.
+                // For user-to-user messages we don't surface a persona label -
+                // keep the chat purely human-to-human when no AI is tagged.
+                const msgObj: any = {
+                  id: nextId.current++,
+                  sender: parsedMsg.username === currentUser ? "me" : "user",
+                  username: parsedMsg.username,
+                  text: parsedMsg.text,
+                };
+                // intentionally omit persona for normal user messages
+                return [...prev, msgObj];
+              });
+            return;
+          }
+
           if (parsedMsg.type === "user.joined" || parsedMsg.type === "user.left") {
             // show a small system message for joins/leaves
             const notice = parsedMsg.type === "user.joined" ? `${parsedMsg.username} joined` : `${parsedMsg.username} left`;
             setMessages((prev) => [
               ...prev,
-              { id: nextId.current++, text: notice, sender: "server" },
+              { id: nextId.current++, text: notice, sender: "system" },
             ]);
             // ensure typing state is cleared when someone leaves
             if (parsedMsg.type === "user.left" && parsedMsg.username) {
@@ -98,9 +118,15 @@ export function useWebSocket(
           }
         }
 
-        if (idx >= 0) {
+          if (idx >= 0) {
           const copy = prev.slice();
-          copy[idx] = { ...copy[idx], text, loading: false };
+          // attach persona metadata when replacing the loading placeholder
+          copy[idx] = {
+            ...copy[idx],
+            text,
+            loading: false,
+            targetPersona: parsedMsg?.targetPersona || parsedMsg?.persona || copy[idx]?.targetPersona || copy[idx]?.username,
+          };
           return copy;
         }
 
@@ -111,6 +137,7 @@ export function useWebSocket(
             id: nextId.current++,
             sender: "server",
             text,
+            targetPersona: parsedMsg?.targetPersona || parsedMsg?.persona || parsedMsg?.username,
           },
         ];
       });
@@ -142,7 +169,7 @@ export function useWebSocket(
         { id: nextId.current++, text: "...", sender: "server", loading: true },
       ]);
 
-      const payload = {
+      const aiPayload = {
         text: content || "",
         username: currentUser,
         persona,
@@ -158,26 +185,29 @@ export function useWebSocket(
       }
 
       try {
-        wsRef.current.send(JSON.stringify(payload));
+        wsRef.current.send(JSON.stringify(aiPayload));
       } catch (err) {
         console.error("Failed to send websocket message:", err);
       }
       return;
     }
 
-    // default: show locally only. AI calls should only be sent to server when
-    // the message is explicitly targeted via a mention (@persona or @Name).
-    setMessages((prev) => [
-      ...prev,
-      { id: nextId.current++, text, sender: "me", username: currentUser },
-    ]);
+    // default: show locally and send to the backend for persistence. AI calls
+    // are only performed when the message contained a mention (handled above).
+    // Do not locally echo non-targeted messages here — rely on the server
+    // to broadcast the message to all clients (including the sender).
 
-    const payload = { text, username: currentUser, persona };
-
+    // Send to backend to be stored for other clients too (no targetPersona => store only)
+    // When not tagging an AI we send a store payload for persistence —
+    // do NOT include a fake/sentinel targetPersona so the backend clearly
+    // treats this as a non-AI message.
+    const storePayload = { text, username: currentUser, persona, store: true };
     try {
-      wsRef.current?.send(JSON.stringify(payload));
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify(storePayload));
+      }
     } catch (err) {
-      console.error("Failed to send websocket message:", err);
+      console.error("Failed to send store message to server:", err);
     }
   };
 
