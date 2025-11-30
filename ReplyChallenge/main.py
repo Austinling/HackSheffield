@@ -1,6 +1,5 @@
 import os
 import uuid
-import json
 from typing import List
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,8 +20,6 @@ load_dotenv(env_path)
 app = FastAPI()
 
 # --- 1. NEW: Connection Manager for Multiplayer ---
-
-
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
@@ -42,7 +39,6 @@ class ConnectionManager:
                 await connection.send_text(message)
             except Exception as e:
                 print(f"Error broadcasting to a client: {e}")
-
 
 # Initialize the manager
 manager = ConnectionManager()
@@ -77,7 +73,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 @app.get("/")
 async def root():
     """Health check endpoint"""
@@ -90,7 +85,6 @@ async def root():
         }
     })
 
-
 @app.get("/health")
 async def health():
     """Health check endpoint"""
@@ -100,7 +94,6 @@ async def health():
         "openai": "initialized" if client else "not initialized",
         "active_users": len(manager.active_connections)
     })
-
 
 @app.on_event("startup")
 async def startup_event():
@@ -114,191 +107,73 @@ async def startup_event():
         print(f"⚠ Warning: Database verification failed on startup: {e}")
     print("="*50 + "\n")
 
-
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    # Connect user to the room and initialize per-connection state
+    # 1. Connect user to the "Room" instead of just accepting
     await manager.connect(websocket)
-
-    # Hardcoded shared session id for hackathon room
+    
+    # 2. Hardcode Session ID for Shared History (Hackathon Logic)
+    # Using a single ID means all users contribute to the same chat history
     session_id = "hackathon_public_room"
-
-    # Ensure a map of websocket -> username exists on app.state
-    if not hasattr(app.state, "connected_clients"):
-        app.state.connected_clients = {}
-
-    print(
-        f"\n🔗 New Multiplayer Connection. Total Users: {len(manager.active_connections)}")
+    
+    print(f"\n🔗 New Multiplayer Connection. Total Users: {len(manager.active_connections)}")
 
     try:
         while True:
+            # 3. Receive User Input
             data = await websocket.receive_text()
-            print(f"📥 Received raw input: {data[:120]}...")
+            print(f"📥 User Input: {data[:100]}...")
+            
+            # 4. BROADCAST USER MESSAGE (So everyone sees what was typed)
+            # You might want to prefix this with "User:" or handle UI bubbles on frontend
+            await manager.broadcast(f"User: {data}")
 
-            # Try to parse structured JSON messages from the frontend
-            parsed = None
-            try:
-                parsed = json.loads(data)
-            except Exception:
-                parsed = None
-
-            # Handle join events: store in DB but DO NOT broadcast to chat
-            if parsed and isinstance(parsed, dict) and parsed.get("type") == "join":
-                username = parsed.get("username") or "anonymous"
-                app.state.connected_clients[websocket] = username
-                print(f"→ Registered user: {username} for websocket")
-
-                # Persist join event to DB (background thread)
-                loop = __import__("asyncio").get_event_loop()
-                await loop.run_in_executor(
-                    executor,
-                    log_chat_to_db,
-                    None,
-                    None,
-                    None,
-                    session_id,
-                    {"event": "join"},
-                    username,
-                    "join",
-                )
-                # Broadcast user.joined presence event to all clients
-                join_payload = json.dumps(
-                    {"type": "user.joined", "username": username})
-                for ws in list(app.state.connected_clients.keys()):
-                    try:
-                        await ws.send_text(join_payload)
-                    except Exception:
-                        pass
-                continue
-
-            # Handle typing presence: rebroadcast to other clients
-            if parsed and isinstance(parsed, dict) and parsed.get("type") == "typing":
-                username = parsed.get("username") or app.state.connected_clients.get(
-                    websocket, "anonymous")
-                payload = json.dumps(
-                    {"type": "typing", "username": username, "isTyping": bool(parsed.get("isTyping"))})
-                # broadcast typing presence to other clients
-                for ws in list(app.state.connected_clients.keys()):
-                    if ws is not websocket:
-                        try:
-                            await ws.send_text(payload)
-                        except Exception:
-                            pass
-                continue
-
-            # For normal messages, expect structured payload with `text` and `username`
-            username = app.state.connected_clients.get(websocket, "anonymous")
-            text = None
-            if parsed and isinstance(parsed, dict) and parsed.get("text"):
-                text = parsed.get("text")
-            else:
-                # fallback: treat raw string as message text
-                text = data
-
-            # Broadcast the user message to everyone (so chat is shared)
-            broadcast_payload = json.dumps(
-                {"type": "message", "username": username, "text": text})
-            await manager.broadcast(broadcast_payload)
-
-            # If OpenAI client missing, send private system notice to sender
             if not client:
-                err = "OpenAI client not initialized"
-                print(f"✗ {err}")
-                try:
-                    await websocket.send_text(json.dumps({"type": "system", "text": err}))
-                except Exception:
-                    pass
-                # still persist the user message without AI
-                loop = __import__("asyncio").get_event_loop()
-                await loop.run_in_executor(
-                    executor,
-                    log_chat_to_db,
-                    text,
-                    None,
-                    None,
-                    session_id,
-                    {},
-                    username,
-                    "message",
-                )
+                error_msg = "OpenAI client not initialized"
+                print(f"✗ {error_msg}")
+                await manager.broadcast(f"System: {error_msg}")
                 continue
-
-            # Call OpenAI privately for this sender only
+            
             try:
-                print(f"🤖 Calling OpenAI for user={username}...")
+                # 5. Call OpenAI API
+                print(f"🤖 Calling OpenAI API...")
                 completion = client.chat.completions.create(
                     model="gpt-4o",
-                    messages=[
-                        {"role": "system", "content": "You are a helpful assistant."},
-                        {"role": "user", "content": text},
-                    ],
-                    max_tokens=500,
+                    messages=[{"role": "user", "content": data}]
                 )
-
+                
                 ai_text = completion.choices[0].message.content
-                tokens = getattr(completion.usage, "total_tokens", None)
-                full_metadata = getattr(completion, "model_dump", lambda: {})()
+                tokens = completion.usage.total_tokens
+                full_metadata = completion.model_dump()
+                
+                print(f"✓ OpenAI Response received ({tokens} tokens)")
 
-                print(f"✓ OpenAI response for {username} ({tokens} tokens)")
-
-                # Persist both prompt and response together
-                loop = __import__("asyncio").get_event_loop()
+                # 6. Save to Supabase (Background Thread)
+                # We save it once. Since session_id is shared, it's saved for the whole room.
+                print(f"💾 Saving to database...")
+                loop = __import__('asyncio').get_event_loop()
                 await loop.run_in_executor(
                     executor,
                     log_chat_to_db,
-                    text,
+                    data,
                     ai_text,
                     tokens,
                     session_id,
-                    full_metadata,
-                    username,
-                    "message",
+                    full_metadata
                 )
 
-                # Send AI response privately to the requester only
-                try:
-                    await websocket.send_text(json.dumps({"type": "ai", "text": ai_text}))
-                except Exception:
-                    await websocket.send_text(ai_text)
+                # 7. BROADCAST AI RESPONSE (So everyone sees the answer)
+                print(f"📤 Broadcasting response ({len(ai_text)} chars)")
+                await manager.broadcast(f"AI: {ai_text}")
 
             except Exception as e:
                 error_msg = f"Error processing request: {str(e)}"
                 print(f"✗ {error_msg}")
-                try:
-                    await websocket.send_text(json.dumps({"type": "system", "text": error_msg}))
-                except Exception:
-                    pass
+                await manager.broadcast(f"System Error: {error_msg}")
 
     except WebSocketDisconnect:
-        # cleanup on disconnect
         manager.disconnect(websocket)
-        username = app.state.connected_clients.pop(websocket, None) if hasattr(
-            app.state, 'connected_clients') else None
-        print(
-            f"🔌 Client disconnected. Remaining: {len(manager.active_connections)} user={username}")
-        # Broadcast user.left presence event and persist to DB
-        if username:
-            # Broadcast to remaining clients
-            leave_payload = json.dumps(
-                {"type": "user.left", "username": username})
-            for ws in list(app.state.connected_clients.keys()):
-                try:
-                    await ws.send_text(leave_payload)
-                except Exception:
-                    pass
-            # Persist leave event to DB
-            loop = __import__("asyncio").get_event_loop()
-            await loop.run_in_executor(
-                executor,
-                log_chat_to_db,
-                None,
-                None,
-                None,
-                session_id,
-                {"event": "leave"},
-                username,
-                "leave",
-            )
+        print(f"🔌 Client disconnected. Remaining: {len(manager.active_connections)}")
     except Exception as e:
         print(f"✗ WebSocket Error: {e}")
         manager.disconnect(websocket)
