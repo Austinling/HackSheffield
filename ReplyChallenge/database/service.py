@@ -33,13 +33,18 @@ def log_chat_to_db(user_prompt: str | None,
         return None
     
     try:
+        # Ensure we have a username - don't allow null/empty
+        final_username = (username or "").strip()
+        if not final_username:
+            final_username = "anonymous"
+        
         data_payload = {
             "prompt": user_prompt,
             "response": ai_response,
             "tokens_used": tokens,
             "session_id": session_id,
             "metadata": metadata or {},
-            "username": username or "anonymous",
+            "username": final_username,
             "event_type": event_type,
             "user_id": None,
             "created_at": datetime.utcnow().isoformat()
@@ -47,7 +52,7 @@ def log_chat_to_db(user_prompt: str | None,
 
         # Execute the insert
         result = supabase.table("requests").insert(data_payload).execute()
-        print(f"✓ Logged to Supabase (Session: {session_id})")
+        print(f"✓ Logged to Supabase (Session: {session_id}, User: {final_username})")
         return result
         
     except Exception as e:

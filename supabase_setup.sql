@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS requests (
   
   -- User information
   user_id UUID REFERENCES auth.users ON DELETE SET NULL,
-  username TEXT DEFAULT 'WebUser',
+  username TEXT NOT NULL,
   
   -- Chat content
   prompt TEXT NOT NULL,
