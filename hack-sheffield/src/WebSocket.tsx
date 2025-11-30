@@ -16,7 +16,10 @@ export function useWebSocket(
     const rawUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8000/ws";
     // Ensure we use a ws/wss scheme (allow users to set http(s) too)
     const normalized = rawUrl.replace(/^http:/i, "ws:").replace(/^https:/i, "wss:");
-    const ws = new WebSocket("wss://unperishable-autogenous-jaycob.ngrok-free.dev/ws");
+    const ws = new WebSocket(
+      "wss://unperishable-autogenous-jaycob.ngrok-free.dev/ws"
+      //"wss://helene-drivable-appetizingly.ngrok-free.dev/ws"
+    );
 
     ws.onopen = () => {
       setConnectionStatus("connected");
