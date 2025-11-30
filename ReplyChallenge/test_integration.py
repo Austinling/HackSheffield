@@ -79,7 +79,7 @@ def test_save_single_message():
         # Get response from OpenAI
         print("Getting OpenAI response...")
         completion = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o",
             messages=[{"role": "user", "content": test_prompt}]
         )
         

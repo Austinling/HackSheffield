@@ -11,16 +11,14 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.17",
-<<<<<<< HEAD
-    "@supabase/supabase-js": "^2.86.0",
-=======
->>>>>>> 8daae0e00340187cd9b1fdf6b3431cc51dadcf86
+    "markdown-it": "^14.1.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@tailwindcss/postcss": "^4.1.17",
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
