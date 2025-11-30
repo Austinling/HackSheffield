@@ -136,7 +136,7 @@ export function ChatInput({
                 ev.preventDefault();
                 insertSuggestion(s);
               }}
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${
+              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors min-h-16 ${
                 idx === activeIndex
                   ? "bg-blue-50 border-l-4 border-blue-500"
                   : "hover:bg-gray-50"
@@ -146,17 +146,17 @@ export function ChatInput({
                 <img
                   src={s.image}
                   alt={s.id || s}
-                  className="w-10 h-10 rounded-full object-cover shadow-sm"
+                  className="w-10 h-10 rounded-full object-cover shadow-sm shrink-0"
                 />
               ) : (
-                <div className="w-10 h-10 rounded-full bg-linear-to-br from-gray-200 to-gray-300 flex items-center justify-center text-gray-600 font-bold">
+                <div className="w-10 h-10 rounded-full bg-linear-to-br from-gray-200 to-gray-300 flex items-center justify-center text-gray-600 font-bold shrink-0">
                   @
                 </div>
               )}
-              <div className="flex flex-col">
+              <div className="flex flex-col justify-center flex-1 min-h-10">
                 <div className="font-semibold text-gray-800">{s.id || s}</div>
                 {s.desc && (
-                  <div className="text-xs text-gray-500">{s.desc}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{s.desc}</div>
                 )}
               </div>
             </div>
