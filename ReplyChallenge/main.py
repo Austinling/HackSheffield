@@ -157,24 +157,24 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 print(f"✓ OpenAI Response received ({tokens} tokens)")
 
-                # # 3. Save to Supabase (using thread pool for blocking operation)
-                # print(f"💾 Saving to database...")
-                # loop = __import__('asyncio').get_event_loop()
-                # await loop.run_in_executor(
-                #     executor,
-                #     log_chat_to_db,
-                #     data,
-                #     answer,
-                #     tokens,
-                #     session_id,
-                #     getattr(response, "model_dump", lambda: {})()
-                # )
+                # 3. Save to Supabase (using thread pool for blocking operation)
+                print(f"💾 Saving to database...")
+                loop = __import__('asyncio').get_event_loop()
+                await loop.run_in_executor(
+                    executor,
+                    log_chat_to_db,
+                    data,
+                    answer,
+                    tokens,
+                    session_id,
+                    getattr(response, "model_dump", lambda: {})()
+                )
 
                 # 4. Log response to console for observability
-                # try:
-                #     print(f"📤 Sending response ({len(answer)} chars)")
-                # except Exception:
-                #     print("📤 Sending response (unknown length)")
+                try:
+                    print(f"📤 Sending response ({len(answer)} chars)")
+                except Exception:
+                    print("📤 Sending response (unknown length)")
 
             except Exception as e:
                 error_msg = f"Error processing request: {str(e)}"
