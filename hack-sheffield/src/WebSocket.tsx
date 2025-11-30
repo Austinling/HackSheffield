@@ -16,7 +16,7 @@ export function useWebSocket(
     const rawUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8000/ws";
     // Ensure we use a ws/wss scheme (allow users to set http(s) too)
     const normalized = rawUrl.replace(/^http:/i, "ws:").replace(/^https:/i, "wss:");
-    const ws = new WebSocket(normalized);
+    const ws = new WebSocket("wss://unperishable-autogenous-jaycob.ngrok-free.dev/ws");
 
     ws.onopen = () => {
       setConnectionStatus("connected");
@@ -178,6 +178,16 @@ export function useWebSocket(
   useEffect(() => {
     if (currentUser) {
       connect();
+
+      // If the socket is already open (reconnecting or switched users), ensure
+      // we explicitly identify/join so the backend maps websocket -> username.
+      try {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: "join", username: currentUser }));
+        }
+      } catch (err) {
+        // ignore send errors here; onopen handler will also send join
+      }
     }
     return () => wsRef.current?.close();
   }, [currentUser]);
