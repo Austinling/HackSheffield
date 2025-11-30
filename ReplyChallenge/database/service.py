@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from .client import supabase
 
-def log_chat_to_db(user_prompt: str, ai_response: str, tokens: int, session_id: str, metadata: dict):
+def log_chat_to_db(user_prompt: str, ai_response: str, tokens: int, session_id: str, metadata: dict, username: str = "WebUser", target_persona: str = "Rogue"):
     """
     Saves the chat interaction to Supabase.
     
@@ -23,20 +23,36 @@ def log_chat_to_db(user_prompt: str, ai_response: str, tokens: int, session_id: 
         return None
     
     try:
+        # Merge persona into metadata and avoid adding top-level DB fields
+        try:
+            final_metadata = dict(metadata or {})
+        except Exception:
+            final_metadata = {"_metadata_parse_error": True}
+        final_metadata.setdefault("target_persona", target_persona)
+
         data_payload = {
             "prompt": user_prompt,
             "response": ai_response,
             "tokens_used": tokens,
             "session_id": session_id,
-            "metadata": metadata,
-            "username": "WebUser",  # Update this later with actual user login
+            "metadata": final_metadata,
+            "username": username,  # Update this later with actual user login
             "user_id": None,        # Keep None unless using Supabase Auth
             "created_at": datetime.utcnow().isoformat()
         }
 
         # Execute the insert
         result = supabase.table("requests").insert(data_payload).execute()
-        print(f"✓ Logged to Supabase (Session: {session_id})")
+        # Debug output: print any error details
+        try:
+            err = getattr(result, "error", None)
+            if err:
+                print(f"✗ Supabase insert error: {err}")
+            else:
+                print(f"✓ Logged to Supabase (Session: {session_id})")
+        except Exception:
+            # best-effort: fall back to generic print
+            print(f"✓ Logged to Supabase (Session: {session_id}) — result: {result}")
         return result
         
     except Exception as e:

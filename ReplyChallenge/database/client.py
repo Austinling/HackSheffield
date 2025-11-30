@@ -3,7 +3,15 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 
 # 1. Load environment variables
+# Load .env from common locations: current working dir and the package folder
 load_dotenv()
+from pathlib import Path
+
+# If SUPABASE_* not present, try to load .env sitting next to this module
+module_env = Path(__file__).resolve().parent / ".env"
+if module_env.exists():
+    load_dotenv(dotenv_path=str(module_env))
+
 
 # 2. Fetch the secrets
 url = os.getenv("SUPABASE_URL")
