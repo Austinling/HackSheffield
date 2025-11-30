@@ -1,6 +1,10 @@
 import { MessageBubble } from "./MessageBubble";
 
-export function MessageList({ messages, messagesContainerRef, typingUsers = new Set() }: any) {
+export function MessageList({
+  messages,
+  messagesContainerRef,
+  typingUsers = new Set(),
+}: any) {
   return (
     <div
       ref={messagesContainerRef}
@@ -9,27 +13,15 @@ export function MessageList({ messages, messagesContainerRef, typingUsers = new 
       {messages.map((msg: unknown) => (
         <MessageBubble key={msg.id} message={msg} />
       ))}
-      {/* Show typing indicators for users currently typing */}
+      {/* Show a concise typing indicator in the message area */}
       {typingUsers.size > 0 && (
-        <div className="space-y-2">
-          {Array.from(typingUsers).map((username: any) => (
-            <div key={`typing-${username}`} className="flex items-start gap-2">
-              <span className="text-xs text-gray-400 px-4 font-semibold">
-                {String(username)} is typing...
-              </span>
-              <div className="flex gap-1 px-4 py-2 bg-gray-300 rounded-lg">
-                <span className="w-2 h-2 bg-gray-600 rounded-full animate-bounce"></span>
-                <span
-                  className="w-2 h-2 bg-gray-600 rounded-full animate-bounce"
-                  style={{ animationDelay: "0.1s" }}
-                ></span>
-                <span
-                  className="w-2 h-2 bg-gray-600 rounded-full animate-bounce"
-                  style={{ animationDelay: "0.2s" }}
-                ></span>
-              </div>
-            </div>
-          ))}
+        <div className="px-4 py-2 text-sm text-gray-400 italic">
+          {(() => {
+            const names = Array.from(typingUsers || []);
+            if (names.length === 1) return `${names[0]} is typing...`;
+            if (names.length === 2) return `${names[0]} and ${names[1]} are typing...`;
+            return `${names.slice(0, 2).join(', ')} and ${names.length - 2} others are typing...`;
+          })()}
         </div>
       )}
     </div>

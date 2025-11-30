@@ -14,3 +14,5 @@ venv/
 
 # Reply Challenge API keys, etc.
 *.env
+
+.vscode/*.json

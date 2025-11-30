@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 
-export function useWebSocket(currentUser: string, persona: string | null = null) {
+export function useWebSocket(
+  currentUser: string,
+  persona: string | null = null
+) {
   const [connectionStatus, setConnectionStatus] = useState("disconnected");
   const [messages, setMessages] = useState<any[]>([]);
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
@@ -17,11 +20,12 @@ export function useWebSocket(currentUser: string, persona: string | null = null)
 
     ws.onopen = () => {
       setConnectionStatus("connected");
-      // NOTE: Do not send a `join` event to the backend here — the backend
-      // treats any received JSON as an AI prompt (it expects a `text` field)
-      // and will attempt to call OpenAI. If you need presence/typing support
-      // we should add explicit server-side handling. For now keep connection
-      // local-only (no join message).
+      // announce join to the server so it can track connected users
+      try {
+        if (currentUser) ws.send(JSON.stringify({ type: "join", username: currentUser }));
+      } catch (err) {
+        console.error("Failed to send join event", err);
+      }
     };
 
     ws.onerror = () => setConnectionStatus("error");
@@ -30,13 +34,45 @@ export function useWebSocket(currentUser: string, persona: string | null = null)
     ws.onmessage = (event) => {
       // Parse incoming data (may be JSON with metadata or plain text)
       let text = typeof event.data === "string" ? event.data : "";
+      let parsedMsg: any = null;
       try {
-        const parsed = JSON.parse(text);
-        if (parsed && typeof parsed === "object") {
+        parsedMsg = JSON.parse(text);
+        if (parsedMsg && typeof parsedMsg === "object") {
+          // handle structured control messages first
+          if (parsedMsg.type === "typing") {
+            const username = parsedMsg.username;
+            const isTyping = !!parsedMsg.isTyping;
+            setTypingUsers((prev) => {
+              const copy = new Set(prev);
+              if (isTyping) copy.add(username);
+              else copy.delete(username);
+              return copy;
+            });
+            return; // don't add to messages
+          }
+
+          if (parsedMsg.type === "user.joined" || parsedMsg.type === "user.left") {
+            // show a small system message for joins/leaves
+            const notice = parsedMsg.type === "user.joined" ? `${parsedMsg.username} joined` : `${parsedMsg.username} left`;
+            setMessages((prev) => [
+              ...prev,
+              { id: nextId.current++, text: notice, sender: "server" },
+            ]);
+            // ensure typing state is cleared when someone leaves
+            if (parsedMsg.type === "user.left" && parsedMsg.username) {
+              setTypingUsers((prev) => {
+                const copy = new Set(prev);
+                copy.delete(parsedMsg.username);
+                return copy;
+              });
+            }
+            return;
+          }
+
           // Prefer common field names for server text
-          if (parsed.text) text = String(parsed.text);
-          else if (parsed.message) text = String(parsed.message);
-          else if (typeof parsed === "string") text = parsed;
+          if (parsedMsg.text) text = String(parsedMsg.text);
+          else if (parsedMsg.message) text = String(parsedMsg.message);
+          else if (typeof parsedMsg === "string") text = parsedMsg;
         }
       } catch (e) {
         // JSON.parse failed — server might send a partial/invalid object string
@@ -112,12 +148,15 @@ export function useWebSocket(currentUser: string, persona: string | null = null)
         persona,
         targetPersona,
       };
-      
+
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-        console.error("WebSocket not connected. State:", wsRef.current?.readyState);
+        console.error(
+          "WebSocket not connected. State:",
+          wsRef.current?.readyState
+        );
         return;
       }
-      
+
       try {
         wsRef.current.send(JSON.stringify(payload));
       } catch (err) {
@@ -126,15 +165,15 @@ export function useWebSocket(currentUser: string, persona: string | null = null)
       return;
     }
 
-    // default: show locally and also send to the backend (server expects payload { text, username, persona })
-    // ensure we use currentUser (passed into the hook) — not a non-existent currentUsername
+    // default: show locally only. AI calls should only be sent to server when
+    // the message is explicitly targeted via a mention (@persona or @Name).
     setMessages((prev) => [
       ...prev,
       { id: nextId.current++, text, sender: "me", username: currentUser },
     ]);
 
     const payload = { text, username: currentUser, persona };
-    
+
     try {
       wsRef.current?.send(JSON.stringify(payload));
     } catch (err) {
@@ -150,16 +189,22 @@ export function useWebSocket(currentUser: string, persona: string | null = null)
   }, [currentUser]);
 
   const sendTypingIndicator = (isTyping: boolean) => {
-    // Do not send typing indicator to backend (backend currently treats all
-    // messages as AI prompts which causes errors). Instead manage a local
-    // typingUsers set so the UI can display typing status locally.
-    setTypingUsers((prev) => {
-      const copy = new Set(prev);
-      if (isTyping) copy.add(currentUser);
-      else copy.delete(currentUser);
-      return copy;
-    });
+    // Send typing presence to the backend so other connected clients can
+    // be notified. The backend will rebroadcast to other clients and will
+    // not forward typing events to OpenAI or DB.
+    try {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      wsRef.current.send(JSON.stringify({ type: "typing", username: currentUser, isTyping }));
+    } catch (err) {
+      console.error("Failed to send typing indicator:", err);
+    }
   };
 
-  return { connectionStatus, messages, typingUsers, sendMessage, sendTypingIndicator };
+  return {
+    connectionStatus,
+    messages,
+    typingUsers,
+    sendMessage,
+    sendTypingIndicator,
+  };
 }
